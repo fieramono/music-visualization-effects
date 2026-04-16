@@ -1,0 +1,2248 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Visualizer Effects by Mono</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js y dependencias para Controles y Post-procesado (Glow) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #020204;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            transition: cursor 0.3s ease;
+        }
+
+        body.idle {
+            cursor: none;
+        }
+
+        canvas {
+            display: block;
+            outline: none;
+        }
+
+        /* Interfaz estilo cristal (Glassmorphism premium) */
+        #controls {
+            position: fixed;
+            top: 24px;
+            left: 24px;
+            background-color: rgba(18, 18, 22, 0.65);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            padding: 28px;
+            border-radius: 24px;
+            color: #ffffff;
+            width: 340px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 90;
+        }
+
+        /* Ocultar scrollbar visualmente pero permitir scroll */
+        #controls::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #controls::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #controls::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        #controls.hidden {
+            opacity: 0;
+            transform: translateX(-120%) scale(0.95);
+            pointer-events: none;
+        }
+
+        .ui-circle-btn {
+            position: fixed;
+            left: 24px;
+            z-index: 100;
+            background-color: rgba(30, 30, 35, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .ui-circle-btn:hover {
+            background-color: rgba(50, 50, 60, 0.8);
+            transform: scale(1.05);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .ui-circle-btn.fade-out {
+            opacity: 0;
+            transform: scale(0.8) translateX(-20px);
+            pointer-events: none;
+        }
+
+        #toggleButton {
+            top: 24px;
+        }
+
+        #fullscreenButton {
+            top: 84px;
+        }
+
+        #resetCamButton {
+            top: 144px;
+        }
+
+        .control-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: rgba(255, 255, 255, 0.65);
+        }
+
+        .control-group input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+            transition: transform 0.1s;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .control-group select {
+            width: 100%;
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 10px 14px;
+            color: white;
+            outline: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+        }
+
+        .control-group input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 100%;
+            height: 40px;
+            border-radius: 12px;
+            background: none;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .control-group input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        .control-group input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 12px;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+        }
+
+        .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .preset-btn {
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .preset-btn:hover {
+            transform: scale(1.15);
+            border-color: rgba(255, 255, 255, 0.7);
+        }
+
+        button.action-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: 0.02em;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: 0 8px 20px rgba(0, 122, 255, 0.3);
+        }
+
+        button.action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 122, 255, 0.4);
+            background: linear-gradient(135deg, #1A8BFF 0%, #005CE6 100%);
+        }
+
+        button.action-btn:active {
+            transform: translateY(0);
+        }
+
+        button.action-btn:disabled {
+            background: #2c2c30;
+            color: rgba(255, 255, 255, 0.3);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .specific-controls-container {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 1.25rem;
+            margin-top: 0.5rem;
+        }
+
+        .specific-panel {
+            display: none;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .specific-panel.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* --- Tutorial Styles --- */
+        #tutorial-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            display: none;
+            /* Spotlight effect using mask */
+            mask-image: radial-gradient(circle at var(--x) var(--y), transparent var(--r), black var(--r));
+            -webkit-mask-image: radial-gradient(circle at var(--x) var(--y), transparent var(--r), black var(--r));
+        }
+
+        #tutorial-overlay.active {
+            opacity: 1;
+            display: block;
+            pointer-events: all;
+        }
+
+        .tutorial-tooltip {
+            position: fixed;
+            z-index: 1001;
+            width: 300px;
+            background: rgba(25, 25, 30, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            padding: 24px;
+            color: white;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateY(20px) scale(0.95);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            transform: translate(var(--tx, 0%), var(--ty, 0%)) translateY(20px) scale(0.95);
+        }
+
+        .tutorial-tooltip.active {
+            opacity: 1;
+            transform: translate(var(--tx, 0%), var(--ty, 0%)) translateY(0) scale(1);
+            pointer-events: all;
+        }
+
+        .tutorial-tooltip h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .tutorial-tooltip p {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 20px;
+        }
+
+        .tutorial-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .tutorial-btn {
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tutorial-btn-primary {
+            background: white;
+            color: black;
+            border: none;
+        }
+
+        .tutorial-btn-primary:hover {
+            background: #eee;
+            transform: translateY(-1px);
+        }
+
+        .tutorial-btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tutorial-btn-link {
+            background: none;
+            color: rgba(255, 255, 255, 0.5);
+            border: none;
+            font-size: 0.75rem;
+        }
+
+        /* --- Mobile Optimizations --- */
+        @media (max-width: 768px) {
+            #controls {
+                width: calc(100% - 32px);
+                left: 16px;
+                top: 80px;
+                padding: 20px;
+                max-height: 75vh;
+            }
+
+            .ui-circle-btn {
+                width: 44px;
+                height: 44px;
+                left: 16px;
+            }
+
+            #toggleButton {
+                top: 16px;
+            }
+
+            #fullscreenButton {
+                left: 72px;
+                top: 16px;
+            }
+
+            #resetCamButton {
+                left: 128px;
+                top: 16px;
+            }
+
+            .control-group label {
+                font-size: 0.6rem;
+            }
+
+            .control-group input[type="range"]::-webkit-slider-thumb {
+                width: 24px;
+                height: 24px;
+            }
+
+            .preset-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+
+            .tutorial-tooltip {
+                width: calc(100% - 40px) !important;
+                left: 20px !important;
+                --tx: 0%;
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="toggleButton" class="ui-circle-btn" title="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14"></line>
+            <line x1="4" y1="10" x2="4" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12" y2="3"></line>
+            <line x1="20" y1="21" x2="20" y2="16"></line>
+            <line x1="20" y1="12" x2="20" y2="3"></line>
+            <line x1="1" y1="14" x2="7" y2="14"></line>
+            <line x1="9" y1="8" x2="15" y2="8"></line>
+            <line x1="17" y1="16" x2="23" y2="16"></line>
+        </svg>
+    </div>
+
+    <div id="fullscreenButton" class="ui-circle-btn" title="Fullscreen Mode">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3">
+            </path>
+        </svg>
+    </div>
+
+    <div id="resetCamButton" class="ui-circle-btn" title="Reset Camera View">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+        </svg>
+    </div>
+
+    <div id="controls" class="hidden">
+        <h2 class="text-xl font-bold mb-5 tracking-tight text-white">Visualizer Settings</h2>
+
+        <div class="control-group">
+            <label for="pattern">Visual Experience</label>
+            <select id="pattern">
+                <option value="waves">Energy Waves</option>
+                <option value="neural">Neural Network</option>
+                <option value="equalizer">Retro Equalizer</option>
+                <option value="oscilloscope">Classic Spectrum</option>
+                <option value="orbs">Floating Orbs</option>
+                <option value="galaxy">Rotating Galaxy</option>
+                <option value="dna">DNA Helix</option>
+                <option value="starfield">Starfield Trip</option>
+                <option value="tunnel">Infinite Tunnel</option>
+                <option value="nebula">Nebula Field</option>
+                <option value="particlesJs">Connected Particles</option>
+            </select>
+        </div>
+
+        <!-- NUEVO CONTRO DE BLOOM / GLOW -->
+        <div class="control-group">
+            <label for="bloomIntensity">Neon Glow Intensity</label>
+            <input type="range" id="bloomIntensity" min="0" max="3" step="0.1" value="1.5">
+        </div>
+
+        <div class="control-group">
+            <label for="speed">Global Speed & Fluidity</label>
+            <input type="range" id="speed" min="0.05" max="2" step="0.05" value="0.8">
+        </div>
+
+        <div class="control-group">
+            <label>Color Presets</label>
+            <div class="preset-grid" id="presetContainer">
+                <!-- Generados por JS -->
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button id="savePresetBtn" class="action-btn" style="padding: 8px; font-size: 0.75rem;">Save My
+                    Colors</button>
+                <button id="clearPresetsBtn" class="action-btn"
+                    style="padding: 8px; font-size: 0.75rem; background: #4b5563; box-shadow: none;">Delete
+                    Saved</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="control-group mb-0">
+                <label for="color1">Tone A</label>
+                <input type="color" id="color1" value="#ff00ff">
+            </div>
+            <div class="control-group mb-0">
+                <label for="color2">Tone B</label>
+                <input type="color" id="color2" value="#00ffff">
+            </div>
+        </div>
+
+        <!-- SECCIÓN DE AJUSTES ESPECÍFICOS DINÁMICOS -->
+        <div class="specific-controls-container">
+            <h3 class="text-xs font-bold mb-3 text-white/90 uppercase tracking-wider">Effect Settings</h3>
+
+            <div id="spec-waves" class="specific-panel active">
+                <div class="control-group">
+                    <label>Base Amplitude</label>
+                    <input type="range" class="spec-slider" data-pattern="waves" data-key="amplitude" min="10" max="100"
+                        value="40">
+                </div>
+                <div class="control-group">
+                    <label>Sound Burst (Reactivity)</label>
+                    <input type="range" class="spec-slider" data-pattern="waves" data-key="reactivity" min="50"
+                        max="350" value="180">
+                </div>
+            </div>
+
+            <div id="spec-neural" class="specific-panel">
+                <div class="control-group">
+                    <label>Connection Reach</label>
+                    <input type="range" class="spec-slider" data-pattern="neural" data-key="distance" min="100"
+                        max="500" value="280">
+                </div>
+                <div class="control-group">
+                    <label>Node Size</label>
+                    <input type="range" class="spec-slider" data-pattern="neural" data-key="nodeSize" min="10" max="40"
+                        value="24" data-rebuild="true">
+                </div>
+            </div>
+
+            <div id="spec-equalizer" class="specific-panel">
+                <div class="control-group">
+                    <label>Peak Hold Time</label>
+                    <input type="range" class="spec-slider" data-pattern="equalizer" data-key="peakTimer" min="5"
+                        max="80" value="40">
+                </div>
+                <div class="control-group">
+                    <label>Drop Speed</label>
+                    <input type="range" class="spec-slider" data-pattern="equalizer" data-key="dropSpeed" min="0.1"
+                        max="2" step="0.1" value="0.5">
+                </div>
+            </div>
+
+            <div id="spec-oscilloscope" class="specific-panel">
+                <div class="control-group">
+                    <label>Wave Height (Gain)</label>
+                    <input type="range" class="spec-slider" data-pattern="oscilloscope" data-key="gain" min="50"
+                        max="300" value="150">
+                </div>
+                <div class="control-group">
+                    <label>Line Thickness</label>
+                    <input type="range" class="spec-slider" data-pattern="oscilloscope" data-key="thickness" min="1"
+                        max="8" value="3" data-rebuild="true">
+                </div>
+            </div>
+
+            <div id="spec-orbs" class="specific-panel">
+                <div class="control-group">
+                    <label>Base Orb Size</label>
+                    <input type="range" class="spec-slider" data-pattern="orbs" data-key="size" min="5" max="40"
+                        value="15" data-rebuild="true">
+                </div>
+                <div class="control-group">
+                    <label>Dispersion Speed</label>
+                    <input type="range" class="spec-slider" data-pattern="orbs" data-key="dispersion" min="0.1" max="2"
+                        step="0.1" value="0.4">
+                </div>
+            </div>
+
+            <div id="spec-galaxy" class="specific-panel">
+                <div class="control-group">
+                    <label>Twist Power (Spin)</label>
+                    <input type="range" class="spec-slider" data-pattern="galaxy" data-key="twist" min="0.0001"
+                        max="0.005" step="0.0001" value="0.001">
+                </div>
+                <div class="control-group">
+                    <label>Stardust Size</label>
+                    <input type="range" class="spec-slider" data-pattern="galaxy" data-key="size" min="5" max="30"
+                        value="12" data-rebuild="true">
+                </div>
+            </div>
+
+            <div id="spec-dna" class="specific-panel">
+                <div class="control-group">
+                    <label>Energy Intensity (Bass)</label>
+                    <input type="range" class="spec-slider" data-pattern="dna" data-key="energy" min="10" max="80"
+                        value="35">
+                </div>
+                <div class="control-group">
+                    <label>Main Helix Radius</label>
+                    <input type="range" class="spec-slider" data-pattern="dna" data-key="radius" min="40" max="150"
+                        value="70">
+                </div>
+            </div>
+
+            <div id="spec-starfield" class="specific-panel">
+                <div class="control-group">
+                    <label>Warp Multiplier (Speed)</label>
+                    <input type="range" class="spec-slider" data-pattern="starfield" data-key="warp" min="1" max="10"
+                        value="2">
+                </div>
+                <div class="control-group">
+                    <label>Star Size</label>
+                    <input type="range" class="spec-slider" data-pattern="starfield" data-key="size" min="2" max="20"
+                        value="8" data-rebuild="true">
+                </div>
+            </div>
+
+            <div id="spec-tunnel" class="specific-panel">
+                <div class="control-group">
+                    <label>Pulse Intensity</label>
+                    <input type="range" class="spec-slider" data-pattern="tunnel" data-key="pulse" min="0.1" max="1"
+                        step="0.05" value="0.35">
+                </div>
+                <div class="control-group">
+                    <label>Tunnel Radius</label>
+                    <input type="range" class="spec-slider" data-pattern="tunnel" data-key="radius" min="50" max="300"
+                        value="120" data-rebuild="true">
+                </div>
+            </div>
+
+            <div id="spec-nebula" class="specific-panel">
+                <div class="control-group">
+                    <label>Base Opacity</label>
+                    <input type="range" class="spec-slider" data-pattern="nebula" data-key="opacity" min="0.05"
+                        max="0.8" step="0.05" value="0.2">
+                </div>
+                <div class="control-group">
+                    <label>Cloud Size</label>
+                    <input type="range" class="spec-slider" data-pattern="nebula" data-key="scale" min="0.5" max="3"
+                        step="0.1" value="1">
+                </div>
+            </div>
+
+            <div id="spec-particlesJs" class="specific-panel">
+                <div class="control-group">
+                    <label>Network Distance</label>
+                    <input type="range" class="spec-slider" data-pattern="particlesJs" data-key="dist" min="50"
+                        max="300" value="140">
+                </div>
+                <div class="control-group">
+                    <label>Particle Size</label>
+                    <input type="range" class="spec-slider" data-pattern="particlesJs" data-key="size" min="5" max="30"
+                        value="14" data-rebuild="true">
+                </div>
+            </div>
+        </div>
+        <!-- FIN AJUSTES ESPECÍFICOS -->
+
+        <div class="control-group mt-6">
+            <button id="audioButton" class="action-btn">Link Environment Audio</button>
+            <p id="audioStatus" class="text-[11px] mt-3 text-center text-gray-400">Microphone inactive</p>
+        </div>
+
+        <div class="control-group">
+            <label for="sensitivity">Overall Audio Sensitivity</label>
+            <input type="range" id="sensitivity" min="0.1" max="4" step="0.1" value="1.5" disabled>
+        </div>
+    </div>
+
+    <div id="tutorial-overlay"></div>
+    <div id="tutorial-tooltip" class="tutorial-tooltip">
+        <h3 id="tutorial-title">Step Title</h3>
+        <p id="tutorial-content">Step content goes here.</p>
+        <div class="tutorial-nav">
+            <button id="tutorial-skip" class="tutorial-btn tutorial-btn-link">Skip Tutorial</button>
+            <div style="display: flex; gap: 8px;">
+                <button id="tutorial-prev" class="tutorial-btn tutorial-btn-secondary">Back</button>
+                <button id="tutorial-next" class="tutorial-btn tutorial-btn-primary">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- Variables Globales ---
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+        
+        let scene, camera, renderer, perspectiveCamera, orthoCamera;
+        let composer, renderPass, bloomPass; // POST-PROCESADO
+        let orbitControls; // CONTROLES 3D
+        let objects = [];
+        let backgroundObjects = [];
+        let audioContext, analyser, dataArray, timeDataArray, source;
+        let isAudioActive = false;
+        let radialTexture;
+
+        // Variables para suavizar el audio
+        let smoothedBass = 0;
+        let smoothedMid = 0;
+        let smoothedHigh = 0;
+
+        // Paletas Premium por defecto
+        const defaultPresets = [
+            { name: 'Aurora', c1: '#00ffcc', c2: '#ff00ff' },
+            { name: 'Matrix', c1: '#00ff00', c2: '#ff003c' },
+            { name: 'Ocean', c1: '#0033ff', c2: '#00ffaa' },
+            { name: 'Sunset', c1: '#ff2a5f', c2: '#ff9933' },
+            { name: 'Silver', c1: '#ffffff', c2: '#555566' }
+        ];
+
+        // Cargar paletas guardadas por el usuario desde LocalStorage
+        let userPresets = JSON.parse(localStorage.getItem('visualizer_presets') || '[]');
+
+        // --- Configuraciones Específicas Dinámicas ---
+        const specSettings = {
+            waves: { amplitude: 40, reactivity: 180 },
+            neural: { distance: 280, nodeSize: 24 },
+            equalizer: { peakTimer: 40, dropSpeed: 0.5 },
+            oscilloscope: { gain: 150, thickness: 3 },
+            orbs: { size: 15, dispersion: 0.4 },
+            galaxy: { twist: 0.001, size: 12 },
+            dna: { energy: 35, radius: 70 },
+            starfield: { warp: 2, size: 8 },
+            tunnel: { pulse: 0.35, radius: 120 },
+            nebula: { opacity: 0.2, scale: 1 },
+            particlesJs: { dist: 140, size: 14 }
+        };
+
+        // --- Configuración Global ---
+        const settings = {
+            pattern: 'waves',
+            speed: 0.8,
+            color1: new THREE.Color(defaultPresets[0].c1),
+            color2: new THREE.Color(defaultPresets[0].c2),
+            sensitivity: 1.5,
+            particleCount: isMobile ? 2000 : 4000,
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x020204, 0.001);
+
+            const aspect = window.innerWidth / window.innerHeight;
+            perspectiveCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 4000);
+            perspectiveCamera.position.z = 400;
+
+            orthoCamera = new THREE.OrthographicCamera(window.innerWidth / -2, window.innerWidth / 2, window.innerHeight / 2, window.innerHeight / -2, 1, 1000);
+            orthoCamera.position.z = 100;
+
+            camera = perspectiveCamera;
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" }); // Antialias false para post-procesado
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(isMobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            // POST-PROCESADO (GLOW/BLOOM)
+            renderPass = new THREE.RenderPass(scene, camera);
+            bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.1;
+            bloomPass.strength = 1.5; // Valor por defecto
+            bloomPass.radius = 0.5;
+
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(renderPass);
+            composer.addPass(bloomPass);
+
+            // INTERACCIÓN DE CÁMARA 3D (OrbitControls)
+            orbitControls = new THREE.OrbitControls(perspectiveCamera, renderer.domElement);
+            orbitControls.enableDamping = true;
+            orbitControls.dampingFactor = 0.05;
+            orbitControls.enablePan = false;
+            orbitControls.minDistance = 100;
+            orbitControls.maxDistance = 1500;
+            if (isMobile) {
+                orbitControls.rotateSpeed *= 0.8;
+                orbitControls.zoomSpeed *= 0.8;
+            }
+
+            radialTexture = createRadialGradientTexture();
+            createBackground();
+            buildPresets();
+            setupUIListeners();
+            setupIdleHideUI(); // Configuración de auto-ocultado
+            updateSpecificUIPanel();
+
+            document.getElementById('color1').value = defaultPresets[0].c1;
+            document.getElementById('color2').value = defaultPresets[0].c2;
+            document.getElementById('pattern').value = 'waves';
+
+            createPattern();
+            animate();
+        }
+
+        // Sistema de inactividad para ocultar UI
+        function setupIdleHideUI() {
+            let timeout;
+            const uiButtons = document.querySelectorAll('.ui-circle-btn');
+
+            function resetIdle() {
+                document.body.classList.remove('idle');
+                uiButtons.forEach(btn => btn.classList.remove('fade-out'));
+
+                clearTimeout(timeout);
+                // Solo ocultar si el panel de ajustes está cerrado
+                const panel = document.getElementById('controls');
+                if (panel.classList.contains('hidden')) {
+                    timeout = setTimeout(() => {
+                        if (!isMobile) document.body.classList.add('idle');
+                        uiButtons.forEach(btn => btn.classList.add('fade-out'));
+                    }, 3000);
+                }
+            }
+
+            window.addEventListener('mousemove', resetIdle);
+            window.addEventListener('mousedown', resetIdle);
+            window.addEventListener('touchstart', resetIdle);
+            window.addEventListener('keydown', resetIdle);
+            resetIdle();
+        }
+
+        function createRadialGradientTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.1, 'rgba(255, 255, 255, 0.8)');
+            gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.2)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 128, 128);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createSoftMaterial(size, opacity = 1.0, useVertexColors = true) {
+            return new THREE.PointsMaterial({
+                size: size,
+                map: radialTexture,
+                transparent: true,
+                opacity: opacity,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                vertexColors: useVertexColors,
+                sizeAttenuation: true
+            });
+        }
+
+        function buildPresets() {
+            const container = document.getElementById('presetContainer');
+            container.innerHTML = ''; // Limpiar antes de regenerar
+
+            const allPresets = [...defaultPresets, ...userPresets];
+
+            allPresets.forEach(preset => {
+                const btn = document.createElement('button');
+                btn.className = 'preset-btn';
+                btn.style.background = `linear-gradient(135deg, ${preset.c1}, ${preset.c2})`;
+                btn.title = preset.name;
+                btn.onclick = () => {
+                    document.getElementById('color1').value = preset.c1;
+                    document.getElementById('color2').value = preset.c2;
+                    settings.color1.set(preset.c1);
+                    settings.color2.set(preset.c2);
+                    updateBackgroundColors();
+
+                    // Actualización inmediata para el ecualizador
+                    if (settings.pattern === 'equalizer' && objects[0]) {
+                        const segmentsPerBar = objects[0].userData.bars[0].userData.segments.length;
+                        objects[0].userData.bars.forEach(barGroup => {
+                            barGroup.userData.segments.forEach((segment, j) => {
+                                segment.material.color.lerpColors(settings.color2, settings.color1, j / segmentsPerBar);
+                            });
+                        });
+                    } else if (settings.pattern !== 'oscilloscope') {
+                        createPattern();
+                    }
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function updateSpecificUIPanel() {
+            document.querySelectorAll('.specific-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+            const activePanel = document.getElementById('spec-' + settings.pattern);
+            if (activePanel) activePanel.classList.add('active');
+        }
+
+        function createBackground() {
+            backgroundObjects.forEach(obj => scene.remove(obj));
+            backgroundObjects = [];
+            const blobCount = 6;
+            for (let i = 0; i < blobCount; i++) {
+                const material = new THREE.SpriteMaterial({
+                    map: radialTexture,
+                    color: i % 2 === 0 ? settings.color1 : settings.color2,
+                    transparent: true,
+                    opacity: 0.15,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+                const sprite = new THREE.Sprite(material);
+                const size = 1500 + Math.random() * 1000;
+                sprite.scale.set(size, size, 1);
+                sprite.position.set(
+                    THREE.MathUtils.randFloatSpread(2000),
+                    THREE.MathUtils.randFloatSpread(1500),
+                    -1500 - i * 150
+                );
+                sprite.userData = { speed: 0.0001 + Math.random() * 0.0003, offset: Math.random() * Math.PI * 2, phase: Math.random() * 10, size: size };
+                scene.add(sprite);
+                backgroundObjects.push(sprite);
+            }
+        }
+
+        function updateBackgroundColors() {
+            backgroundObjects.forEach((sprite, i) => {
+                sprite.material.color.copy(i % 2 === 0 ? settings.color1 : settings.color2);
+            });
+        }
+
+        function resetCameraView() {
+            const is2DPattern = ['equalizer', 'oscilloscope'].includes(settings.pattern);
+
+            if (is2DPattern) {
+                camera = orthoCamera;
+                camera.position.set(0, 0, 100);
+                camera.lookAt(0, 0, 0);
+                if (orbitControls) orbitControls.enabled = false;
+            } else {
+                camera = perspectiveCamera;
+                if (orbitControls) {
+                    orbitControls.enabled = true;
+                    orbitControls.target.set(0, 0, 0);
+                }
+
+                if (settings.pattern === 'tunnel') {
+                    // Vista mirando directamente a la profundidad del túnel
+                    camera.position.set(0, 0, 10);
+                    if (orbitControls) orbitControls.target.set(0, 0, -100);
+                } else if (settings.pattern === 'particlesJs') {
+                    camera.position.set(0, 0, 600);
+                } else {
+                    camera.position.set(0, 0, 400);
+                }
+
+                if (orbitControls) orbitControls.update();
+            }
+            renderPass.camera = camera;
+        }
+
+        function clearScene() {
+            objects.forEach(obj => {
+                if (obj.type === "Group") {
+                    while (obj.children.length > 0) {
+                        const child = obj.children[0];
+                        obj.remove(child);
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) child.material.dispose();
+                    }
+                }
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (obj.material.map && obj.material.map !== radialTexture) obj.material.map.dispose();
+                    obj.material.dispose();
+                }
+                scene.remove(obj);
+            });
+            objects = [];
+        }
+
+        function createPattern() {
+            clearScene();
+            const is2DPattern = ['equalizer', 'oscilloscope'].includes(settings.pattern);
+
+            resetCameraView();
+
+            backgroundObjects.forEach(obj => obj.visible = !is2DPattern);
+
+            switch (settings.pattern) {
+                case 'neural': createNeuralNetwork(); break;
+                case 'equalizer': createEqualizer(); break;
+                case 'oscilloscope': createOscilloscope(); break;
+                case 'orbs': createOrbs(); break;
+                case 'galaxy': createGalaxy(); break;
+                case 'waves': createWaves(); break;
+                case 'dna': createDna(); break;
+                case 'starfield': createStarfield(); break;
+                case 'tunnel': createTunnel(); break;
+                case 'nebula': createNebulaField(); break;
+                case 'particlesJs': createParticlesJs(); break;
+            }
+        }
+
+        function createOrbs() {
+            const count = 800;
+            const geometry = new THREE.BufferGeometry();
+            const positions = [], colors = [];
+            for (let i = 0; i < count; i++) {
+                positions.push((Math.random() - 0.5) * 1000, (Math.random() - 0.5) * 1000, (Math.random() - 0.5) * 800);
+                const mixedColor = settings.color1.clone().lerp(settings.color2, Math.random());
+                colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
+            }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = createSoftMaterial(specSettings.orbs.size, 0.6);
+            const points = new THREE.Points(geometry, material);
+            points.userData.velocities = new Float32Array(count * 3);
+            for (let i = 0; i < points.userData.velocities.length; i++) {
+                points.userData.velocities[i] = (Math.random() - 0.5);
+            }
+            scene.add(points);
+            objects.push(points);
+        }
+
+        function createGalaxy() {
+            const count = 2500;
+            const geometry = new THREE.BufferGeometry();
+            const positions = [], colors = [];
+            const branches = 5;
+
+            for (let i = 0; i < count; i++) {
+                const distance = Math.pow(Math.random(), 2) * 500;
+                const branchAngle = (i % branches) * ((Math.PI * 2) / branches);
+                const spinAngle = distance * 0.008;
+                const dispersion = (Math.random() - 0.5) * (distance * 0.25 + 10);
+                const randomY = (Math.random() - 0.5) * 80 * Math.exp(-distance / 150);
+                const totalAngle = branchAngle + spinAngle;
+
+                const x = Math.cos(totalAngle) * distance + Math.cos(totalAngle + Math.PI / 2) * dispersion;
+                const y = randomY;
+                const z = Math.sin(totalAngle) * distance + Math.sin(totalAngle + Math.PI / 2) * dispersion;
+
+                positions.push(x, y, z);
+
+                const colorFactor = Math.min(1, distance / 400);
+                const mixedColor = settings.color1.clone().lerp(settings.color2, colorFactor);
+                colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = createSoftMaterial(specSettings.galaxy.size, 0.8);
+            const points = new THREE.Points(geometry, material);
+
+            points.rotation.x = Math.PI / 4;
+            points.rotation.z = Math.PI / 8;
+            scene.add(points);
+            objects.push(points);
+        }
+
+        function createWaves() {
+            const group = new THREE.Group();
+            const lineCount = 50;
+            const pointsPerLine = 200;
+            const width = 1600;
+            const depth = 800;
+
+            for (let i = 0; i < lineCount; i++) {
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(pointsPerLine * 3);
+                const colors = new Float32Array(pointsPerLine * 3);
+
+                const z = (i / lineCount) * depth - (depth / 2);
+                const color = settings.color1.clone().lerp(settings.color2, i / lineCount);
+
+                for (let j = 0; j < pointsPerLine; j++) {
+                    const x = (j / (pointsPerLine - 1)) * width - (width / 2);
+                    positions[j * 3] = x;
+                    positions[j * 3 + 1] = 0;
+                    positions[j * 3 + 2] = z;
+
+                    const edgeFade = Math.sin((j / (pointsPerLine - 1)) * Math.PI);
+                    colors[j * 3] = color.r * edgeFade;
+                    colors[j * 3 + 1] = color.g * edgeFade;
+                    colors[j * 3 + 2] = color.b * edgeFade;
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+                const material = new THREE.LineBasicMaterial({
+                    vertexColors: true,
+                    blending: THREE.AdditiveBlending,
+                    transparent: true,
+                    opacity: 0.7,
+                    linewidth: 1
+                });
+
+                const line = new THREE.Line(geometry, material);
+                line.userData = { zOffset: z, index: i };
+                group.add(line);
+            }
+
+            group.position.y = -80;
+            scene.add(group);
+            objects.push(group);
+        }
+
+        function createDna() {
+            const group = new THREE.Group();
+            const numChains = 3;
+
+            for (let j = 0; j < numChains; j++) {
+                const chainGroup = new THREE.Group();
+                const rungs = 120;
+                const height = 1200;
+                const isMain = j === 0;
+
+                const baseRadius = isMain ? specSettings.dna.radius : (specSettings.dna.radius * 0.4) + Math.random() * 20;
+
+                const positions = [];
+                const colors = [];
+                const angles = [];
+
+                for (let i = 0; i < rungs; i++) {
+                    const y = (i / rungs) * height - height / 2;
+                    const angle = i * 0.18;
+
+                    positions.push(0, y, 0);
+                    positions.push(0, y, 0);
+
+                    angles.push(angle);
+                    angles.push(angle + Math.PI);
+
+                    const colorAlpha = i / rungs;
+                    const c1 = settings.color1.clone().lerp(settings.color2, colorAlpha);
+                    const c2 = settings.color2.clone().lerp(settings.color1, colorAlpha);
+
+                    colors.push(c1.r, c1.g, c1.b);
+                    colors.push(c2.r, c2.g, c2.b);
+                }
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                geometry.setAttribute('baseAngle', new THREE.Float32BufferAttribute(angles, 1));
+
+                const pointMat = createSoftMaterial(isMain ? 18 : 10, 0.9);
+                const points = new THREE.Points(geometry, pointMat);
+
+                const lineMat = new THREE.LineBasicMaterial({
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.3,
+                    blending: THREE.AdditiveBlending
+                });
+                const lines = new THREE.LineSegments(geometry, lineMat);
+
+                chainGroup.add(points);
+                chainGroup.add(lines);
+
+                if (!isMain) {
+                    chainGroup.position.x = (j === 1 ? -1 : 1) * (200 + Math.random() * 150);
+                    chainGroup.position.z = -300 - Math.random() * 200;
+                }
+
+                chainGroup.userData = {
+                    radius: baseRadius,
+                    rungs: rungs,
+                    points: points,
+                    lines: lines,
+                    offset: Math.random() * Math.PI * 2,
+                    direction: j % 2 === 0 ? 1 : -1
+                };
+                group.add(chainGroup);
+            }
+            scene.add(group);
+            objects.push(group);
+        }
+
+        function createStarfield() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = [], colors = [];
+
+            for (let i = 0; i < settings.particleCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 60 + Math.random() * 1800;
+
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                const z = -Math.random() * 3000;
+
+                positions.push(x, y, z);
+
+                const mixedColor = settings.color1.clone().lerp(settings.color2, Math.random());
+                colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
+            }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = createSoftMaterial(specSettings.starfield.size, 0.9);
+            const points = new THREE.Points(geometry, material);
+            scene.add(points);
+            objects.push(points);
+        }
+
+        function createTunnel() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = [], colors = [];
+            const rings = 80;
+            const particlesPerRing = 150;
+            const ringRadius = specSettings.tunnel.radius;
+            const ringSpacing = 30;
+            for (let i = 0; i < rings; i++) {
+                const colorPhase = (i / rings) * Math.PI * 2;
+                const lerpFactor = (Math.sin(colorPhase) + 1) / 2;
+                const mixedColor = settings.color1.clone().lerp(settings.color2, lerpFactor);
+
+                for (let j = 0; j < particlesPerRing; j++) {
+                    const angle = (j / particlesPerRing) * Math.PI * 2;
+                    const r = ringRadius + (Math.random() - 0.5) * (ringRadius * 0.1);
+                    positions.push(r * Math.cos(angle), r * Math.sin(angle), -i * ringSpacing);
+                    colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
+                }
+            }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = createSoftMaterial(12, 0.7);
+            const points = new THREE.Points(geometry, material);
+            points.userData.totalDepth = rings * ringSpacing;
+            scene.add(points);
+            objects.push(points);
+        }
+
+        function createNebulaField() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = [], colors = [];
+            const numClouds = 8;
+            const particlesPerCloud = Math.floor(settings.particleCount / numClouds);
+            for (let i = 0; i < numClouds; i++) {
+                const cloudCenter = new THREE.Vector3((Math.random() - 0.5) * 1000, (Math.random() - 0.5) * 600, (Math.random() - 0.5) * 600);
+                const cloudRadius = 150 + Math.random() * 200;
+                const cloudColor = settings.color1.clone().lerp(settings.color2, Math.random());
+                for (let j = 0; j < particlesPerCloud; j++) {
+                    const pos = new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).normalize().multiplyScalar(Math.random() * cloudRadius).add(cloudCenter);
+                    positions.push(pos.x, pos.y, pos.z);
+                    const lerpFactor = pos.distanceTo(cloudCenter) / cloudRadius;
+                    const particleColor = cloudColor.clone().lerp(new THREE.Color(0x000000), lerpFactor);
+                    colors.push(particleColor.r, particleColor.g, particleColor.b);
+                }
+            }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = createSoftMaterial(25, 0.4);
+            const points = new THREE.Points(geometry, material);
+            scene.add(points);
+            objects.push(points);
+        }
+
+        function createParticlesJs() {
+            const count = 250;
+            const pGeometry = new THREE.BufferGeometry();
+            const positions = [], velocities = [];
+            for (let i = 0; i < count; i++) {
+                positions.push((Math.random() - 0.5) * window.innerWidth, (Math.random() - 0.5) * window.innerHeight, (Math.random() - 0.5) * 500);
+                velocities.push((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5));
+            }
+            pGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            pGeometry.setAttribute('velocity', new THREE.Float32BufferAttribute(velocities, 3));
+
+            const pMaterial = createSoftMaterial(specSettings.particlesJs.size, 0.9, false);
+            pMaterial.color = settings.color1;
+
+            const particles = new THREE.Points(pGeometry, pMaterial);
+            scene.add(particles);
+            objects.push(particles);
+
+            const lGeometry = new THREE.BufferGeometry();
+            lGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * count * 3 * 2), 3).setUsage(THREE.DynamicDrawUsage));
+            lGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * count * 3 * 2), 3).setUsage(THREE.DynamicDrawUsage));
+
+            const lMaterial = new THREE.LineBasicMaterial({ vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.4 });
+            const lines = new THREE.LineSegments(lGeometry, lMaterial);
+
+            scene.add(lines);
+            objects.push(lines);
+        }
+
+        function createNeuralNetwork() {
+            const group = new THREE.Group();
+            const nodeCount = 60;
+            const nodes = [];
+            const nodePositions = [];
+
+            for (let i = 0; i < nodeCount; i++) {
+                const pos = new THREE.Vector3(
+                    THREE.MathUtils.randFloatSpread(800),
+                    THREE.MathUtils.randFloatSpread(600),
+                    THREE.MathUtils.randFloatSpread(400)
+                );
+
+                const v = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2
+                ).normalize().multiplyScalar(0.15);
+
+                nodes.push({
+                    position: pos,
+                    velocity: v,
+                    connections: []
+                });
+                nodePositions.push(pos.x, pos.y, pos.z);
+            }
+
+            const nodeGeometry = new THREE.BufferGeometry();
+            nodeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(nodePositions, 3));
+
+            const nodeMaterial = createSoftMaterial(specSettings.neural.nodeSize, 0.9, false);
+            nodeMaterial.color = settings.color1;
+
+            const nodePoints = new THREE.Points(nodeGeometry, nodeMaterial);
+            group.add(nodePoints);
+
+            const linePositions = [];
+            const lineGeometry = new THREE.BufferGeometry();
+            lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nodeCount * nodeCount * 6), 3));
+            const lineMaterial = new THREE.LineBasicMaterial({
+                color: settings.color2,
+                transparent: true,
+                opacity: 0.25,
+                blending: THREE.AdditiveBlending
+            });
+            const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+            group.add(lines);
+
+            group.userData = { nodes, nodePoints, lines };
+            scene.add(group);
+            objects.push(group);
+        }
+
+        function createEqualizer() {
+            if (!isAudioActive) return;
+            const numBars = 64;
+            const segmentsPerBar = 18;
+            const barWidth = window.innerWidth / numBars; // Ancho completo
+            const totalHeight = window.innerHeight * 0.7;
+            const segmentHeight = totalHeight / segmentsPerBar;
+            const segmentGap = segmentHeight * 0.2;
+            const effectiveSegmentHeight = segmentHeight - segmentGap;
+
+            const eqGroup = new THREE.Group();
+            eqGroup.userData.bars = [];
+
+            const baseColor = settings.color2;
+            const peakColor = settings.color1;
+
+            for (let i = 0; i < numBars; i++) {
+                const barGroup = new THREE.Group();
+                barGroup.userData = { segments: [], peakLevel: 0, peakTimer: 0, currentLevel: 0 };
+
+                for (let j = 0; j < segmentsPerBar; j++) {
+                    const segmentGeom = new THREE.BoxGeometry(barWidth * 0.9, effectiveSegmentHeight, 5);
+
+                    let color = new THREE.Color();
+                    color.lerpColors(baseColor, peakColor, j / segmentsPerBar);
+
+                    const segmentMat = new THREE.MeshBasicMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+
+                    const segment = new THREE.Mesh(segmentGeom, segmentMat);
+                    segment.position.y = j * segmentHeight + (segmentHeight / 2);
+                    segment.visible = false;
+                    barGroup.add(segment);
+                    barGroup.userData.segments.push(segment);
+                }
+                barGroup.position.x = i * barWidth - window.innerWidth / 2 + barWidth / 2;
+                barGroup.position.y = -totalHeight / 2;
+                eqGroup.add(barGroup);
+                eqGroup.userData.bars.push(barGroup);
+            }
+            scene.add(eqGroup);
+            objects.push(eqGroup);
+        }
+
+        function createOscilloscope() {
+            const group = new THREE.Group();
+
+            const gridSize = Math.max(window.innerWidth, window.innerHeight) * 2;
+            const gridHelper = new THREE.GridHelper(gridSize, 60, 0x334440, 0x1a2b25);
+            gridHelper.rotation.x = Math.PI / 2;
+            gridHelper.position.z = -10;
+            group.add(gridHelper);
+
+            const frameGeom = new THREE.BufferGeometry();
+            const w = window.innerWidth / 2 - 20;
+            const h = window.innerHeight / 2 - 20;
+            const framePos = new Float32Array([
+                -w, h, 0, w, h, 0, w, -h, 0, -w, -h, 0, -w, h, 0
+            ]);
+            frameGeom.setAttribute('position', new THREE.BufferAttribute(framePos, 3));
+            const frameMat = new THREE.LineBasicMaterial({ color: settings.color2, transparent: true, opacity: 0.7 });
+            const frame = new THREE.Line(frameGeom, frameMat);
+            group.add(frame);
+
+            const bufferLength = 256;
+            const fillGeom = new THREE.BufferGeometry();
+            const fillPositions = new Float32Array(bufferLength * 2 * 3);
+            const fillColors = new Float32Array(bufferLength * 2 * 3);
+            const indices = [];
+
+            for (let i = 0; i < bufferLength - 1; i++) {
+                const top1 = i * 2;
+                const bot1 = i * 2 + 1;
+                const top2 = (i + 1) * 2;
+                const bot2 = (i + 1) * 2 + 1;
+                indices.push(top1, bot1, top2);
+                indices.push(bot1, bot2, top2);
+            }
+            fillGeom.setIndex(indices);
+
+            for (let i = 0; i < bufferLength; i++) {
+                fillPositions[i * 6 + 1] = -window.innerHeight / 2 + 20;
+                fillPositions[i * 6 + 4] = -window.innerHeight / 2 + 20;
+            }
+
+            fillGeom.setAttribute('position', new THREE.BufferAttribute(fillPositions, 3));
+            fillGeom.setAttribute('color', new THREE.BufferAttribute(fillColors, 3));
+
+            const fillMat = new THREE.MeshBasicMaterial({
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.5,
+                blending: THREE.AdditiveBlending,
+                side: THREE.DoubleSide
+            });
+            const fillMesh = new THREE.Mesh(fillGeom, fillMat);
+            group.add(fillMesh);
+
+            const lineGeom = new THREE.BufferGeometry();
+            const linePositions = new Float32Array(bufferLength * 3);
+            for (let i = 0; i < bufferLength; i++) {
+                linePositions[i * 3 + 1] = -window.innerHeight / 2 + 20;
+            }
+            lineGeom.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+
+            const lineMat = new THREE.LineBasicMaterial({
+                color: settings.color1,
+                linewidth: specSettings.oscilloscope.thickness,
+                transparent: true,
+                opacity: 0.8
+            });
+            const line = new THREE.Line(lineGeom, lineMat);
+            group.add(line);
+
+            const coreMat = new THREE.LineBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.9,
+            });
+            const coreLine = new THREE.Line(lineGeom, coreMat);
+            group.add(coreLine);
+
+            group.userData = { bufferLength };
+            scene.add(group);
+            objects.push(group);
+        }
+
+        // --- Lógica de Animación ---
+        const clock = new THREE.Clock();
+
+        function lerp(start, end, amt) {
+            return (1 - amt) * start + amt * end;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const elapsedTime = clock.getElapsedTime();
+
+            let rawBass = 0, rawMid = 0, rawHigh = 0;
+
+            if (isAudioActive) {
+                analyser.getByteFrequencyData(dataArray);
+                analyser.getByteTimeDomainData(timeDataArray);
+
+                rawBass = (dataArray.slice(0, 20).reduce((a, b) => a + b, 0) / 20) / 255.0;
+                rawMid = (dataArray.slice(20, 150).reduce((a, b) => a + b, 0) / 130) / 255.0;
+                rawHigh = (dataArray.slice(150, 512).reduce((a, b) => a + b, 0) / 362) / 255.0;
+            }
+
+            smoothedBass = lerp(smoothedBass, rawBass, 0.15);
+            smoothedMid = lerp(smoothedMid, rawMid, 0.15);
+            smoothedHigh = lerp(smoothedHigh, rawHigh, 0.15);
+
+            const dynamicSpeed = settings.speed * (1 + smoothedBass * settings.sensitivity * 2);
+
+            animateBackground(elapsedTime, smoothedBass);
+
+            if (orbitControls && orbitControls.enabled) orbitControls.update();
+
+            switch (settings.pattern) {
+                case 'neural': animateNeuralNetwork(smoothedBass, smoothedMid, dynamicSpeed); break;
+                case 'equalizer': animateEqualizer(); break;
+                case 'oscilloscope': animateOscilloscope(); break;
+                case 'orbs': animateOrbs(dynamicSpeed, smoothedMid); break;
+                case 'galaxy': animateGalaxy(dynamicSpeed, smoothedBass); break;
+                case 'waves': animateWaves(elapsedTime, dynamicSpeed, smoothedBass); break;
+                case 'dna': animateDna(elapsedTime, dynamicSpeed, smoothedMid); break;
+                case 'starfield': animateStarfield(smoothedBass); break;
+                case 'tunnel': animateTunnel(dynamicSpeed, smoothedBass); break;
+                case 'nebula': animateNebulaField(dynamicSpeed, smoothedBass); break;
+                case 'particlesJs': animateParticlesJs(dynamicSpeed, smoothedBass); break;
+            }
+
+            // Renderizado por EffectComposer (Bloom) en lugar de renderer standard
+            if (composer) {
+                composer.render();
+            } else {
+                renderer.render(scene, camera);
+            }
+        }
+
+        function animateBackground(time, audioLevel) {
+            backgroundObjects.forEach((sprite, i) => {
+                const u = sprite.userData;
+                const movementScale = 1 + audioLevel * settings.sensitivity;
+
+                sprite.position.x += Math.sin(time * u.speed * 8 + u.offset) * 1.5 * movementScale;
+                sprite.position.y += Math.cos(time * u.speed * 6 + u.offset) * 1.5 * movementScale;
+
+                const s = u.size * (1 + Math.sin(time * 0.2 + u.phase) * 0.1);
+                sprite.scale.set(s, s, 1);
+
+                sprite.material.opacity = 0.1 + (audioLevel * 0.15 * settings.sensitivity);
+            });
+        }
+
+        function animateOrbs(dynamicSpeed, audioLevel) {
+            if (!objects[0]) return;
+            objects[0].material.size = specSettings.orbs.size + audioLevel * 30 * settings.sensitivity;
+            const positions = objects[0].geometry.attributes.position.array;
+            const velocities = objects[0].userData.velocities;
+
+            const actualSpeed = dynamicSpeed * specSettings.orbs.dispersion;
+
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i] += velocities[i] * actualSpeed;
+                positions[i + 1] += velocities[i + 1] * actualSpeed;
+                if (Math.abs(positions[i]) > 500) velocities[i] *= -1;
+                if (Math.abs(positions[i + 1]) > 500) velocities[i + 1] *= -1;
+            }
+            objects[0].geometry.attributes.position.needsUpdate = true;
+            objects[0].rotation.z += 0.0005 * settings.speed;
+            objects[0].rotation.y += 0.0002 * settings.speed;
+        }
+
+        function animateGalaxy(dynamicSpeed, audioLevel) {
+            if (!objects[0]) return;
+            objects[0].rotation.y -= specSettings.galaxy.twist * dynamicSpeed * 10;
+
+            objects[0].material.size = specSettings.galaxy.size + audioLevel * 25 * settings.sensitivity;
+
+            const pulse = 1 + audioLevel * 0.1 * settings.sensitivity;
+            objects[0].scale.set(pulse, 1, pulse);
+        }
+
+        function animateWaves(elapsedTime, dynamicSpeed, audioLevel) {
+            if (!objects[0]) return;
+            const group = objects[0];
+            const time = elapsedTime * 0.8 * settings.speed;
+
+            const audioBurst = Math.pow(audioLevel, 1.5) * settings.sensitivity * specSettings.waves.reactivity;
+            const baseAmp = specSettings.waves.amplitude;
+
+            group.children.forEach((line, i) => {
+                const positions = line.geometry.attributes.position.array;
+                const pointsPerLine = positions.length / 3;
+                const zOffset = line.userData.zOffset;
+
+                for (let j = 0; j < pointsPerLine; j++) {
+                    const x = positions[j * 3];
+                    const nx = x / 800;
+                    const centerFocus = Math.exp(-(nx * nx) * 3.5);
+
+                    const baseWave1 = Math.sin(nx * 2.5 + time + zOffset * 0.005) * baseAmp;
+                    const baseWave2 = Math.cos(nx * 4.0 - time * 0.8 + zOffset * 0.01) * (baseAmp / 2);
+
+                    const reactiveWave = Math.sin(nx * 12 + time * 6) * Math.cos(zOffset * 0.04) * audioBurst * centerFocus;
+                    positions[j * 3 + 1] = baseWave1 + baseWave2 + reactiveWave;
+                }
+                line.geometry.attributes.position.needsUpdate = true;
+                line.material.opacity = 0.3 + (audioLevel * settings.sensitivity * 0.5) + (Math.sin(time + i * 0.1) * 0.2);
+            });
+
+            group.rotation.y = Math.sin(elapsedTime * 0.2) * 0.15;
+            group.rotation.x = Math.sin(elapsedTime * 0.15) * 0.05;
+        }
+
+        function animateDna(elapsedTime, dynamicSpeed, audioLevel) {
+            if (!objects[0]) return;
+            const mainGroup = objects[0];
+            const burst = Math.pow(audioLevel, 1.5) * settings.sensitivity;
+
+            mainGroup.children.forEach((chain, index) => {
+                const { rungs, points, lines, offset, direction } = chain.userData;
+                const isMain = index === 0;
+
+                let chainRadius = isMain ? specSettings.dna.radius : (specSettings.dna.radius * 0.4);
+
+                const currentRadius = chainRadius * (1 + burst * (isMain ? 0.6 : 0.3));
+                const timeTwist = elapsedTime * 0.6 * settings.speed * direction;
+
+                const posArray = points.geometry.attributes.position.array;
+                const baseAngles = points.geometry.attributes.baseAngle.array;
+
+                for (let i = 0; i < rungs; i++) {
+                    const angle1 = baseAngles[i * 2] + timeTwist + offset;
+                    const angle2 = baseAngles[i * 2 + 1] + timeTwist + offset;
+
+                    const energyWave = Math.sin(i * 0.15 - elapsedTime * 4) * burst * (isMain ? specSettings.dna.energy : specSettings.dna.energy * 0.5);
+                    const r = currentRadius + Math.max(0, energyWave);
+
+                    posArray[i * 6] = Math.cos(angle1) * r;
+                    posArray[i * 6 + 2] = Math.sin(angle1) * r;
+
+                    posArray[i * 6 + 3] = Math.cos(angle2) * r;
+                    posArray[i * 6 + 5] = Math.sin(angle2) * r;
+                }
+
+                points.geometry.attributes.position.needsUpdate = true;
+
+                chain.rotation.y += 0.003 * dynamicSpeed * direction;
+                chain.position.y = Math.sin(elapsedTime * 0.5 + offset) * 25;
+
+                lines.material.opacity = 0.1 + burst * 0.8;
+                points.material.size = (isMain ? 16 : 8) + burst * (isMain ? 25 : 15);
+            });
+
+            mainGroup.rotation.y += 0.001 * settings.speed;
+        }
+
+        function animateStarfield(audioLevel) {
+            if (!objects[0]) return;
+            const explosiveAudio = Math.pow(audioLevel, 2) * 5;
+
+            const warpSpeed = (settings.speed * specSettings.starfield.warp * 2) + explosiveAudio * 40 * settings.sensitivity;
+
+            const positions = objects[0].geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i + 2] += warpSpeed;
+                if (positions[i + 2] > 400) {
+                    positions[i + 2] -= 2000;
+                }
+            }
+            objects[0].geometry.attributes.position.needsUpdate = true;
+
+            objects[0].scale.z = 1 + explosiveAudio * settings.sensitivity;
+        }
+
+        function animateTunnel(dynamicSpeed, audioLevel) {
+            if (!objects[0]) return;
+            const speed = dynamicSpeed * 5;
+            const points = objects[0];
+            const positions = points.geometry.attributes.position.array;
+            const totalDepth = points.userData.totalDepth;
+            const burst = Math.pow(audioLevel, 1.5) * settings.sensitivity;
+
+            for (let i = 2; i < positions.length; i += 3) {
+                positions[i] += speed;
+                if (positions[i] > 100) {
+                    positions[i] -= totalDepth;
+                }
+            }
+            points.geometry.attributes.position.needsUpdate = true;
+
+            points.rotation.z += (0.001 + burst * 0.01) * settings.speed;
+
+            const scale = 1 + burst * specSettings.tunnel.pulse;
+            points.scale.set(scale, scale, 1);
+
+            points.material.size = 12 + burst * 35;
+        }
+
+        function animateNebulaField(dynamicSpeed, audioLevel) {
+            if (!objects[0]) return;
+            const points = objects[0];
+            const burst = Math.pow(audioLevel, 1.5) * settings.sensitivity;
+
+            points.rotation.y += 0.0005 * settings.speed * (1 + burst * 10);
+            points.rotation.z += 0.0002 * settings.speed * (1 + burst * 5);
+
+            points.material.size = 25 + burst * 60;
+
+            const s = specSettings.nebula.scale + burst * 0.3;
+            points.scale.set(s, s, s);
+
+            points.material.opacity = specSettings.nebula.opacity + audioLevel * 0.6 * settings.sensitivity;
+        }
+
+        function animateParticlesJs(dynamicSpeed, audioLevel) {
+            const particles = objects.find(o => o.type === 'Points');
+            const lines = objects.find(o => o.type === 'LineSegments');
+            if (!particles || !lines) return;
+
+            const pAttr = particles.geometry.attributes;
+            const lAttr = lines.geometry.attributes;
+
+            const burst = Math.pow(audioLevel, 2) * settings.sensitivity;
+            const connectDist = specSettings.particlesJs.dist * (1 + burst * 1.5);
+            const halfW = window.innerWidth / 1.5, halfH = window.innerHeight / 1.5;
+
+            let lineVertexPos = 0;
+            for (let i = 0; i < pAttr.position.count; i++) {
+                pAttr.position.array[i * 3 + 0] += pAttr.velocity.array[i * 3 + 0] * dynamicSpeed;
+                pAttr.position.array[i * 3 + 1] += pAttr.velocity.array[i * 3 + 1] * dynamicSpeed;
+                if (Math.abs(pAttr.position.array[i * 3 + 0]) > halfW) pAttr.velocity.array[i * 3 + 0] *= -1;
+                if (Math.abs(pAttr.position.array[i * 3 + 1]) > halfH) pAttr.velocity.array[i * 3 + 1] *= -1;
+
+                for (let j = i + 1; j < pAttr.position.count; j++) {
+                    const dx = pAttr.position.array[i * 3 + 0] - pAttr.position.array[j * 3 + 0];
+                    const dy = pAttr.position.array[i * 3 + 1] - pAttr.position.array[j * 3 + 1];
+                    const dz = pAttr.position.array[i * 3 + 2] - pAttr.position.array[j * 3 + 2];
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                    if (dist < connectDist) {
+                        let alpha = Math.pow(1.0 - dist / connectDist, 2);
+                        alpha = Math.min(1.0, alpha * (1 + burst * 5));
+
+                        lAttr.position.setXYZ(lineVertexPos, pAttr.position.getX(i), pAttr.position.getY(i), pAttr.position.getZ(i));
+                        lAttr.color.setXYZ(lineVertexPos, settings.color1.r * alpha, settings.color1.g * alpha, settings.color1.b * alpha);
+                        lineVertexPos++;
+                        lAttr.position.setXYZ(lineVertexPos, pAttr.position.getX(j), pAttr.position.getY(j), pAttr.position.getZ(j));
+                        lAttr.color.setXYZ(lineVertexPos, settings.color2.r * alpha, settings.color2.g * alpha, settings.color2.b * alpha);
+                        lineVertexPos++;
+                    }
+                }
+            }
+            pAttr.position.needsUpdate = true;
+            lAttr.position.needsUpdate = true;
+            lAttr.color.needsUpdate = true;
+            lines.geometry.setDrawRange(0, lineVertexPos);
+
+            particles.material.size = specSettings.particlesJs.size + burst * 20;
+        }
+
+        function animateNeuralNetwork(audioLevel, midAudioLevel, dynamicSpeed) {
+            const group = objects[0];
+            if (!group || !group.userData.nodes) return;
+            const { nodes, nodePoints, lines } = group.userData;
+            const nodePositions = nodePoints.geometry.attributes.position.array;
+            const linePositions = lines.geometry.attributes.position.array;
+
+            const burst = Math.pow(audioLevel, 2) * settings.sensitivity;
+            const midBurst = Math.pow(midAudioLevel, 1.5) * settings.sensitivity;
+
+            nodePoints.material.size = specSettings.neural.nodeSize + burst * 60;
+            lines.material.opacity = 0.15 + midBurst * 2.5;
+
+            let lineIdx = 0;
+            const maxDist = specSettings.neural.distance;
+
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                node.position.add(node.velocity.clone().multiplyScalar(0.3 * settings.speed * (1 + burst * 5)));
+                if (node.position.length() > 400) node.velocity.negate();
+
+                nodePositions[i * 3] = node.position.x;
+                nodePositions[i * 3 + 1] = node.position.y;
+                nodePositions[i * 3 + 2] = node.position.z;
+
+                for (let j = i + 1; j < nodes.length; j++) {
+                    if (nodes[i].position.distanceTo(nodes[j].position) < maxDist) {
+                        if (lineIdx < linePositions.length) {
+                            linePositions[lineIdx++] = nodes[i].position.x;
+                            linePositions[lineIdx++] = nodes[i].position.y;
+                            linePositions[lineIdx++] = nodes[i].position.z;
+                            linePositions[lineIdx++] = nodes[j].position.x;
+                            linePositions[lineIdx++] = nodes[j].position.y;
+                            linePositions[lineIdx++] = nodes[j].position.z;
+                        }
+                    }
+                }
+            }
+            lines.geometry.setDrawRange(0, lineIdx / 3);
+            nodePoints.geometry.attributes.position.needsUpdate = true;
+            lines.geometry.attributes.position.needsUpdate = true;
+
+            group.rotation.y += 0.001 * settings.speed * (1 + burst * 2);
+            group.rotation.x += 0.0005 * settings.speed * (1 + burst * 2);
+
+            const s = 1 + burst * 0.4;
+            group.scale.set(s, s, s);
+        }
+
+        function animateEqualizer() {
+            if (!isAudioActive || !objects[0]) return;
+            const eqGroup = objects[0];
+            if (!eqGroup.userData.bars) return;
+            const numBars = eqGroup.userData.bars.length;
+            const segmentsPerBar = eqGroup.userData.bars[0].userData.segments.length;
+
+            // Mapeo logarítmico para distribuir las frecuencias por todo el ancho de la pantalla
+            // Usamos un rango de bins del FFT donde realmente está la música (ej. 1 a 200 de 512)
+            const minIndex = 1;
+            const maxIndex = 200;
+
+            for (let i = 0; i < numBars; i++) {
+                // Curva logarítmica para los índices de frecuencia
+                const startIdx = Math.floor(minIndex * Math.pow(maxIndex / minIndex, i / numBars));
+                let endIdx = Math.floor(minIndex * Math.pow(maxIndex / minIndex, (i + 1) / numBars));
+
+                // CORRECCIÓN: Asegurar que siempre se evalúe al menos 1 frecuencia en los rangos bajos
+                if (endIdx <= startIdx) {
+                    endIdx = startIdx + 1;
+                }
+
+                let sum = 0;
+                let count = 0;
+                for (let j = startIdx; j < endIdx; j++) {
+                    sum += dataArray[j];
+                    count++;
+                }
+
+                // Evitar división por 0
+                const rawValue = count > 0 ? (sum / count) / 255.0 : 0;
+                const bar = eqGroup.userData.bars[i];
+
+                bar.userData.currentLevel = lerp(bar.userData.currentLevel, rawValue, 0.3);
+
+                const activeSegments = Math.round(bar.userData.currentLevel * segmentsPerBar * settings.sensitivity * 1.5);
+
+                if (activeSegments > bar.userData.peakLevel) {
+                    bar.userData.peakLevel = activeSegments;
+                    bar.userData.peakTimer = specSettings.equalizer.peakTimer;
+                } else {
+                    bar.userData.peakTimer--;
+                    if (bar.userData.peakTimer <= 0) {
+                        bar.userData.peakLevel = Math.max(0, bar.userData.peakLevel - specSettings.equalizer.dropSpeed);
+                    }
+                }
+
+                bar.userData.segments.forEach((segment, j) => {
+                    const isPeak = Math.floor(bar.userData.peakLevel) === j && bar.userData.peakLevel > 0;
+
+                    if (j < activeSegments || isPeak) {
+                        segment.visible = true;
+                        segment.material.opacity = isPeak ? 1.0 : 0.85;
+                    } else {
+                        segment.visible = false;
+                    }
+                });
+            }
+        }
+
+        function animateOscilloscope() {
+            if (!isAudioActive || !objects[0]) return;
+
+            const group = objects[0];
+            const bufferLength = group.userData.bufferLength;
+            const fill = group.children[2];
+            const line = group.children[3];
+
+            const fillPos = fill.geometry.attributes.position.array;
+            const fillCol = fill.geometry.attributes.color.array;
+            const linePos = line.geometry.attributes.position.array;
+
+            const sliceWidth = window.innerWidth / bufferLength;
+            const bottomY = -window.innerHeight / 2 + 20;
+
+            const availableHeight = specSettings.oscilloscope.gain;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const x = i * sliceWidth - window.innerWidth / 2;
+
+                const v = dataArray[i] / 255.0;
+                const targetY = bottomY + (v * availableHeight * settings.sensitivity);
+
+                const currentY = linePos[i * 3 + 1];
+                const newY = lerp(currentY, targetY, 0.4);
+
+                linePos[i * 3] = x;
+                linePos[i * 3 + 1] = newY;
+                linePos[i * 3 + 2] = 0;
+
+                fillPos[i * 6] = x;
+                fillPos[i * 6 + 1] = newY;
+                fillPos[i * 6 + 2] = 0;
+
+                fillPos[i * 6 + 3] = x;
+                fillPos[i * 6 + 4] = bottomY;
+                fillPos[i * 6 + 5] = 0;
+
+                fillCol[i * 6] = settings.color1.r;
+                fillCol[i * 6 + 1] = settings.color1.g;
+                fillCol[i * 6 + 2] = settings.color1.b;
+                fillCol[i * 6 + 3] = 0;
+                fillCol[i * 6 + 4] = 0;
+                fillCol[i * 6 + 5] = 0;
+            }
+
+            fill.geometry.attributes.position.needsUpdate = true;
+            fill.geometry.attributes.color.needsUpdate = true;
+            line.geometry.attributes.position.needsUpdate = true;
+
+            line.material.color.copy(settings.color1);
+            group.children[1].material.color.copy(settings.color2);
+        }
+
+        // --- Lógica de Audio ---
+        async function setupAudio() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 1024;
+                    analyser.smoothingTimeConstant = 0.85;
+                    source = audioContext.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    timeDataArray = new Uint8Array(analyser.fftSize);
+                    isAudioActive = true;
+
+                    const btn = document.getElementById('audioButton');
+                    btn.textContent = 'Audio Linked';
+                    btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                    btn.disabled = true;
+                    document.getElementById('sensitivity').disabled = false;
+                    document.getElementById('audioStatus').textContent = "Listening to environment";
+                } catch (err) {
+                    document.getElementById('audioStatus').textContent = "Permission denied";
+                }
+            } else {
+                document.getElementById('audioStatus').textContent = "Audio not supported";
+            }
+        }
+
+        // --- Listeners y UI ---
+        function setupUIListeners() {
+            const ui = {
+                pattern: document.getElementById('pattern'),
+                speed: document.getElementById('speed'),
+                color1: document.getElementById('color1'),
+                color2: document.getElementById('color2'),
+                audioButton: document.getElementById('audioButton'),
+                sensitivity: document.getElementById('sensitivity'),
+                bloomIntensity: document.getElementById('bloomIntensity'),
+                toggleButton: document.getElementById('toggleButton'),
+                fullscreenButton: document.getElementById('fullscreenButton'),
+                resetCamButton: document.getElementById('resetCamButton'),
+                controlsPanel: document.getElementById('controls'),
+                savePresetBtn: document.getElementById('savePresetBtn'),
+                clearPresetsBtn: document.getElementById('clearPresetsBtn'),
+            };
+
+            let colorDebounce;
+            const handleColorUpdate = () => {
+                settings.color1.set(ui.color1.value);
+                settings.color2.set(ui.color2.value);
+                updateBackgroundColors();
+
+                if (settings.pattern === 'equalizer' && objects[0]) {
+                    // Actualización inmediata (súper fluida sin recrear geometría)
+                    const segmentsPerBar = objects[0].userData.bars[0].userData.segments.length;
+                    objects[0].userData.bars.forEach(barGroup => {
+                        barGroup.userData.segments.forEach((segment, j) => {
+                            segment.material.color.lerpColors(settings.color2, settings.color1, j / segmentsPerBar);
+                        });
+                    });
+                } else if (settings.pattern === 'oscilloscope') {
+                    // El osciloscopio se actualiza en tiempo real internamente en animate()
+                } else {
+                    // Retrasar la reconstrucción pesada mientras se arrastra el color picker
+                    clearTimeout(colorDebounce);
+                    colorDebounce = setTimeout(() => {
+                        createPattern();
+                    }, 80);
+                }
+            };
+
+            ui.pattern.addEventListener('change', e => {
+                settings.pattern = e.target.value;
+                updateSpecificUIPanel();
+                createPattern();
+            });
+            ui.speed.addEventListener('input', e => { settings.speed = parseFloat(e.target.value); });
+
+            ui.bloomIntensity.addEventListener('input', e => {
+                if (bloomPass) bloomPass.strength = parseFloat(e.target.value);
+            });
+
+            ui.color1.addEventListener('input', handleColorUpdate);
+            ui.color2.addEventListener('input', handleColorUpdate);
+
+            ui.audioButton.addEventListener('click', setupAudio);
+            ui.sensitivity.addEventListener('input', e => { settings.sensitivity = parseFloat(e.target.value); });
+
+            ui.savePresetBtn.addEventListener('click', () => {
+                const c1 = ui.color1.value;
+                const c2 = ui.color2.value;
+                userPresets.push({ name: 'Custom ' + (userPresets.length + 1), c1, c2 });
+                localStorage.setItem('visualizer_presets', JSON.stringify(userPresets));
+                buildPresets();
+            });
+
+            ui.clearPresetsBtn.addEventListener('click', () => {
+                userPresets = [];
+                localStorage.removeItem('visualizer_presets');
+                buildPresets();
+            });
+
+            ui.resetCamButton.addEventListener('click', resetCameraView);
+
+            document.querySelectorAll('.spec-slider').forEach(slider => {
+                slider.addEventListener('input', (e) => {
+                    const pattern = e.target.dataset.pattern;
+                    const key = e.target.dataset.key;
+                    specSettings[pattern][key] = parseFloat(e.target.value);
+
+                    if (e.target.dataset.rebuild === 'true') {
+                        createPattern();
+                    }
+                });
+            });
+
+            let isPanelVisible = true; // Empieza abierto
+            ui.controlsPanel.classList.remove('hidden');
+
+            ui.toggleButton.addEventListener('click', () => {
+                isPanelVisible = !isPanelVisible;
+                if (isPanelVisible) {
+                    ui.controlsPanel.classList.remove('hidden');
+                    if (!isMobile) {
+                        ui.toggleButton.style.transform = "translateX(360px)";
+                        ui.fullscreenButton.style.transform = "translateX(360px)";
+                        ui.resetCamButton.style.transform = "translateX(360px)";
+                    }
+                } else {
+                    ui.controlsPanel.classList.add('hidden');
+                    if (!isMobile) {
+                        ui.toggleButton.style.transform = "translateX(0px)";
+                        ui.fullscreenButton.style.transform = "translateX(0px)";
+                        ui.resetCamButton.style.transform = "translateX(0px)";
+                    }
+                }
+            });
+
+            ui.fullscreenButton.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.error(`Error: ${err.message}`);
+                    });
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    }
+                }
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            const aspect = window.innerWidth / window.innerHeight;
+            perspectiveCamera.aspect = aspect;
+            perspectiveCamera.updateProjectionMatrix();
+
+            orthoCamera.left = window.innerWidth / -2;
+            orthoCamera.right = window.innerWidth / 2;
+            orthoCamera.top = window.innerHeight / 2;
+            orthoCamera.bottom = window.innerHeight / -2;
+            orthoCamera.updateProjectionMatrix();
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+
+            if (settings.pattern === 'equalizer' || settings.pattern === 'oscilloscope') {
+                createPattern();
+            }
+        });
+
+        // --- Tutorial Implementation ---
+        const tutorialSteps = [
+            {
+                title: "Welcome to Music Visualizer!",
+                content: "Discover 11 high-performance sensory experiences that react in real-time to your music or environment.",
+                target: null // Screen center
+            },
+            {
+                title: "Control Panel",
+                content: "Open this panel to customize every aspect of the visual experience.",
+                target: "#toggleButton"
+            },
+            {
+                title: "Environment Audio",
+                content: "Click here to link your microphone. The visuals will react instantly to the sound around you.",
+                target: "#audioButton",
+                action: () => {
+                    const panel = document.getElementById('controls');
+                    if (panel.classList.contains('hidden')) {
+                        document.getElementById('toggleButton').click();
+                    }
+                }
+            },
+            {
+                title: "Visual Experiences",
+                content: "Switch between 11 unique modes like DNA Helix, Infinite Tunnel, or Neural Network.",
+                target: "#pattern"
+            },
+            {
+                title: "Dynamic Colors",
+                content: "Customize the color palette or pick one of our premium presets.",
+                target: "#presetContainer"
+            },
+            {
+                title: "Camera Interaction",
+                content: "Click and drag to rotate in 3D, and scroll to zoom. Use this button to reset the view.",
+                target: "#resetCamButton"
+            },
+            {
+                title: "Total Immersion",
+                content: "Go full screen to transform your room into a digital sanctuary.",
+                target: "#fullscreenButton"
+            }
+        ];
+
+        let currentStep = 0;
+        const tutorialOverlay = document.getElementById('tutorial-overlay');
+        const tutorialTooltip = document.getElementById('tutorial-tooltip');
+
+        function startTutorial() {
+            if (localStorage.getItem('visualizer_tutorial_done')) return;
+
+            currentStep = 0;
+            tutorialOverlay.classList.add('active');
+            tutorialTooltip.classList.add('active');
+            showStep(currentStep);
+        }
+
+        function showStep(index) {
+            const step = tutorialSteps[index];
+            document.getElementById('tutorial-title').textContent = step.title;
+            document.getElementById('tutorial-content').textContent = step.content;
+
+            document.getElementById('tutorial-prev').style.display = index === 0 ? 'none' : 'block';
+            document.getElementById('tutorial-next').textContent = index === tutorialSteps.length - 1 ? 'Finish' : 'Next';
+
+            if (step.action) step.action();
+
+            if (step.target) {
+                const targetEl = document.querySelector(step.target);
+                if (targetEl) {
+                    const rect = targetEl.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    const radius = Math.max(rect.width, rect.height) / 2 + 10;
+
+                    tutorialOverlay.style.setProperty('--x', `${centerX}px`);
+                    tutorialOverlay.style.setProperty('--y', `${centerY}px`);
+                    tutorialOverlay.style.setProperty('--r', `${radius}px`);
+
+                    // Position tooltip near target
+                    const tooltipRect = tutorialTooltip.getBoundingClientRect();
+                    let top = rect.bottom + 20;
+                    let left = centerX - tooltipRect.width / 2;
+
+                    // Boundary checks
+                    if (isMobile) {
+                        top = rect.bottom + 10;
+                        if (top + tooltipRect.height > window.innerHeight) top = rect.top - tooltipRect.height - 10;
+                    } else {
+                        if (top + tooltipRect.height > window.innerHeight) top = rect.top - tooltipRect.height - 20;
+                        if (left < 20) left = 20;
+                        if (left + tooltipRect.width > window.innerWidth - 20) left = window.innerWidth - tooltipRect.width - 20;
+                    }
+
+                    tutorialTooltip.style.top = `${top}px`;
+                    tutorialTooltip.style.left = isMobile ? '20px' : `${left}px`;
+                    tutorialTooltip.style.setProperty('--tx', '0%');
+                    tutorialTooltip.style.setProperty('--ty', '0%');
+                }
+            } else {
+                // Center welcome step
+                tutorialOverlay.style.setProperty('--r', `0px`);
+                tutorialTooltip.style.top = '50%';
+                tutorialTooltip.style.left = isMobile ? '20px' : '50%';
+                tutorialTooltip.style.setProperty('--tx', isMobile ? '0%' : '-50%');
+                tutorialTooltip.style.setProperty('--ty', '-50%');
+            }
+        }
+
+        document.getElementById('tutorial-next').onclick = () => {
+            currentStep++;
+            if (currentStep < tutorialSteps.length) {
+                showStep(currentStep);
+            } else {
+                finishTutorial();
+            }
+        };
+
+        document.getElementById('tutorial-prev').onclick = () => {
+            currentStep--;
+            if (currentStep >= 0) {
+                showStep(currentStep);
+            }
+        };
+
+        document.getElementById('tutorial-skip').onclick = finishTutorial;
+
+        function finishTutorial() {
+            tutorialOverlay.classList.remove('active');
+            tutorialTooltip.classList.remove('active');
+            localStorage.setItem('visualizer_tutorial_done', 'true');
+
+            // Close panel if it was opened by tutorial
+            const panel = document.getElementById('controls');
+            if (!panel.classList.contains('hidden')) {
+                // document.getElementById('toggleButton').click(); // Let the user keep it open if they want
+            }
+        }
+
+        // Handle resize during tutorial
+        window.addEventListener('resize', () => {
+            if (tutorialOverlay.classList.contains('active')) {
+                showStep(currentStep);
+            }
+        });
+
+        // Initialize
+        init();
+        setTimeout(startTutorial, 1000); // Small delay for effect
+    </script>
+</body>
+
+</html>
