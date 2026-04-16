@@ -38,7 +38,7 @@
         #controls {
             position: fixed;
             top: 24px;
-            left: 24px;
+            right: 24px;
             background-color: rgba(18, 18, 22, 0.65);
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
@@ -69,7 +69,7 @@
 
         #controls.hidden {
             opacity: 0;
-            transform: translateX(-120%) scale(0.95);
+            transform: translateX(20%) scale(0.95);
             pointer-events: none;
         }
 
@@ -385,6 +385,7 @@
             #controls {
                 width: calc(100% - 32px);
                 left: 16px;
+                right: auto;
                 top: 80px;
                 padding: 20px;
                 max-height: 75vh;
@@ -680,6 +681,24 @@
             <label for="sensitivity">Overall Audio Sensitivity</label>
             <input type="range" id="sensitivity" min="0.1" max="4" step="0.1" value="1.5" disabled>
         </div>
+
+        <div class="control-group mt-2 pt-4 border-t border-gray-800">
+            <h4 class="text-[10px] uppercase tracking-wider text-gray-500 mb-4">Physics & Post-FX</h4>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <label class="text-xs text-gray-400">Kaleidoscope</label>
+                    <input type="checkbox" id="kaleidoscopeToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600">
+                </div>
+                <div class="flex items-center justify-between">
+                    <label class="text-xs text-gray-400">Camera Shake</label>
+                    <input type="checkbox" id="shakeToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600" checked>
+                </div>
+                <div class="flex items-center justify-between">
+                    <label class="text-xs text-gray-400">Auto-Zoom Pulse</label>
+                    <input type="checkbox" id="zoomToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600" checked>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="tutorial-overlay"></div>
@@ -746,13 +765,48 @@
             `
         };
 
+        const KaleidoscopeShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "sides": { value: 6.0 },
+                "angle": { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float sides;
+                uniform float angle;
+                varying vec2 vUv;
+
+                void main() {
+                    vec2 uv = vUv - 0.5;
+                    float radius = length(uv);
+                    float a = atan(uv.y, uv.x) + angle;
+                    float tau = 6.28318530718;
+                    a = mod(a, tau/sides);
+                    a = abs(a - tau/sides/2.0);
+                    uv = vec2(cos(a), sin(a)) * radius;
+                    gl_FragColor = texture2D(tDiffuse, uv + 0.5);
+                }
+            `
+        };
+
         // --- Variables Globales ---
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
         
         let scene, camera, renderer, perspectiveCamera, orthoCamera;
-        let composer, renderPass, bloomPass, fxPass; // POST-PROCESADO
+        let composer, renderPass, bloomPass, fxPass, kaleidoscopePass; // POST-PROCESADO
         let starField, nebulaParticles; // FONDO DINÁMICO
         let glitchTimer = 0, flashTimer = 0;
+        let pointLight1, pointLight2; // LUCES DINÁMICAS
+        let cameraShake = new THREE.Vector3();
+        let beatDetector = { threshold: 0.8, decay: 0.005, value: 0 };
         let orbitControls; // CONTROLES 3D
         let objects = [];
         let backgroundObjects = [];
@@ -800,6 +854,9 @@
             color2: new THREE.Color(defaultPresets[0].c2),
             sensitivity: 1.5,
             particleCount: isMobile ? 2000 : 4000,
+            useKaleidoscope: false,
+            useShake: true,
+            useZoom: true
         };
 
         function init() {
@@ -834,6 +891,20 @@
             // NUEVO: DigitalFX Pass
             fxPass = new THREE.ShaderPass(DigitalFXShader);
             composer.addPass(fxPass);
+
+            // NUEVO: Kaleidoscope Pass
+            kaleidoscopePass = new THREE.ShaderPass(KaleidoscopeShader);
+            kaleidoscopePass.enabled = false;
+            composer.addPass(kaleidoscopePass);
+
+            // LUCES DINÁMICAS (Fase 2)
+            pointLight1 = new THREE.PointLight(settings.color1, 0, 1000);
+            pointLight1.position.set(200, 200, 200);
+            scene.add(pointLight1);
+
+            pointLight2 = new THREE.PointLight(settings.color2, 0, 1000);
+            pointLight2.position.set(-200, -200, 200);
+            scene.add(pointLight2);
 
             // INTERACCIÓN DE CÁMARA 3D (OrbitControls)
             orbitControls = new THREE.OrbitControls(perspectiveCamera, renderer.domElement);
@@ -1644,6 +1715,36 @@
                 fxPass.uniforms.flashAmount.value = flashTimer * 0.2;
             }
 
+            if (kaleidoscopePass && kaleidoscopePass.enabled) {
+                kaleidoscopePass.uniforms.angle.value = elapsedTime * 0.1;
+            }
+
+            // 4. Lógica de Luces y Cámara (Fase 2)
+            if (pointLight1 && pointLight2) {
+                const burst = Math.pow(smoothedBass, 1.5) * settings.sensitivity;
+                pointLight1.intensity = burst * 5;
+                pointLight1.color.copy(settings.color1);
+                pointLight2.intensity = burst * 5;
+                pointLight2.color.copy(settings.color2);
+                
+                const lRadius = 300 + Math.sin(elapsedTime) * 100;
+                pointLight1.position.set(Math.cos(elapsedTime) * lRadius, Math.sin(elapsedTime) * lRadius, 100);
+                pointLight2.position.set(Math.cos(elapsedTime + Math.PI) * lRadius, Math.sin(elapsedTime + Math.PI) * lRadius, 100);
+            }
+
+            // 5. Shake y Zoom de Cámara
+            if (settings.useShake && rawBass > 0.8) {
+                const shakePower = (rawBass - 0.8) * 15 * settings.sensitivity;
+                perspectiveCamera.position.x += (Math.random() - 0.5) * shakePower;
+                perspectiveCamera.position.y += (Math.random() - 0.5) * shakePower;
+            }
+
+            if (settings.useZoom) {
+                const zoomFactor = 1 + (smoothedBass * 0.05 * settings.sensitivity);
+                perspectiveCamera.zoom = zoomFactor;
+                perspectiveCamera.updateProjectionMatrix();
+            }
+
             // Renderizado por EffectComposer (Bloom + FX)
             if (composer) {
                 composer.render();
@@ -2144,6 +2245,20 @@
             ui.audioButton.addEventListener('click', setupAudio);
             ui.sensitivity.addEventListener('input', e => { settings.sensitivity = parseFloat(e.target.value); });
 
+            // Bindings Fase 2
+            document.getElementById('kaleidoscopeToggle').onchange = (e) => {
+                settings.useKaleidoscope = e.target.checked;
+                if (kaleidoscopePass) kaleidoscopePass.enabled = settings.useKaleidoscope;
+            };
+
+            document.getElementById('shakeToggle').onchange = (e) => {
+                settings.useShake = e.target.checked;
+            };
+
+            document.getElementById('zoomToggle').onchange = (e) => {
+                settings.useZoom = e.target.checked;
+            };
+
             ui.savePresetBtn.addEventListener('click', () => {
                 const c1 = ui.color1.value;
                 const c2 = ui.color2.value;
@@ -2179,18 +2294,8 @@
                 isPanelVisible = !isPanelVisible;
                 if (isPanelVisible) {
                     ui.controlsPanel.classList.remove('hidden');
-                    if (!isMobile) {
-                        ui.toggleButton.style.transform = "translateX(360px)";
-                        ui.fullscreenButton.style.transform = "translateX(360px)";
-                        ui.resetCamButton.style.transform = "translateX(360px)";
-                    }
                 } else {
                     ui.controlsPanel.classList.add('hidden');
-                    if (!isMobile) {
-                        ui.toggleButton.style.transform = "translateX(0px)";
-                        ui.fullscreenButton.style.transform = "translateX(0px)";
-                        ui.resetCamButton.style.transform = "translateX(0px)";
-                    }
                 }
             });
 
@@ -2236,7 +2341,7 @@
             {
                 title: "Control Panel",
                 content: "Open this panel to customize every aspect of the visual experience.",
-                target: "#toggleButton"
+                target: "#controls"
             },
             {
                 title: "Environment Audio",
