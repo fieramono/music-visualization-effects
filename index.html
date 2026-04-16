@@ -696,11 +696,63 @@
     </div>
 
     <script type="module">
+        // --- DigitalFXShader Definition ---
+        const DigitalFXShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "amount": { value: 0.005 },
+                "angle": { value: 0.0 },
+                "glitchIntensity": { value: 0.0 },
+                "flashAmount": { value: 0.0 },
+                "time": { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float amount;
+                uniform float angle;
+                uniform float glitchIntensity;
+                uniform float flashAmount;
+                uniform float time;
+                varying vec2 vUv;
+
+                float rand(vec2 co){
+                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+                }
+
+                void main() {
+                    vec2 uv = vUv;
+                    
+                    // Simple Glitch
+                    if (glitchIntensity > 0.1) {
+                        float shift = rand(vec2(floor(uv.y * 15.0), time)) * glitchIntensity * 0.1;
+                        uv.x += shift;
+                    }
+
+                    // Chromatic Aberration
+                    vec2 offset = amount * vec2( cos(angle), sin(angle));
+                    vec4 cr = texture2D(tDiffuse, uv + offset);
+                    vec4 cga = texture2D(tDiffuse, uv);
+                    vec4 cb = texture2D(tDiffuse, uv - offset);
+                    
+                    gl_FragColor = vec4(cr.r, cga.g, cb.b, cga.a) + vec4(flashAmount);
+                }
+            `
+        };
+
         // --- Variables Globales ---
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
         
         let scene, camera, renderer, perspectiveCamera, orthoCamera;
-        let composer, renderPass, bloomPass; // POST-PROCESADO
+        let composer, renderPass, bloomPass, fxPass; // POST-PROCESADO
+        let starField, nebulaParticles; // FONDO DINÁMICO
+        let glitchTimer = 0, flashTimer = 0;
         let orbitControls; // CONTROLES 3D
         let objects = [];
         let backgroundObjects = [];
@@ -778,6 +830,10 @@
             composer = new THREE.EffectComposer(renderer);
             composer.addPass(renderPass);
             composer.addPass(bloomPass);
+
+            // NUEVO: DigitalFX Pass
+            fxPass = new THREE.ShaderPass(DigitalFXShader);
+            composer.addPass(fxPass);
 
             // INTERACCIÓN DE CÁMARA 3D (OrbitControls)
             orbitControls = new THREE.OrbitControls(perspectiveCamera, renderer.domElement);
@@ -906,25 +962,62 @@
         function createBackground() {
             backgroundObjects.forEach(obj => scene.remove(obj));
             backgroundObjects = [];
-            const blobCount = 6;
+
+            // 1. StarField (Polvo estelar)
+            const starGeo = new THREE.BufferGeometry();
+            const starCount = isMobile ? 2000 : 5000;
+            const positions = new Float32Array(starCount * 3);
+            const sizes = new Float32Array(starCount);
+
+            for (let i = 0; i < starCount; i++) {
+                positions[i * 3] = THREE.MathUtils.randFloatSpread(4000);
+                positions[i * 3 + 1] = THREE.MathUtils.randFloatSpread(3000);
+                positions[i * 3 + 2] = THREE.MathUtils.randFloatSpread(2000) - 1000;
+                sizes[i] = Math.random() * 3 + 1;
+            }
+
+            starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            starGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            const starMaterial = new THREE.PointsMaterial({
+                size: 2,
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.5,
+                map: radialTexture,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            starField = new THREE.Points(starGeo, starMaterial);
+            scene.add(starField);
+            backgroundObjects.push(starField);
+
+            // 2. Nebulosas (Blobs dinámicos mejorados)
+            const blobCount = isMobile ? 3 : 6;
             for (let i = 0; i < blobCount; i++) {
                 const material = new THREE.SpriteMaterial({
                     map: radialTexture,
                     color: i % 2 === 0 ? settings.color1 : settings.color2,
                     transparent: true,
-                    opacity: 0.15,
+                    opacity: 0.12,
                     blending: THREE.AdditiveBlending,
                     depthWrite: false
                 });
                 const sprite = new THREE.Sprite(material);
-                const size = 1500 + Math.random() * 1000;
+                const size = 1800 + Math.random() * 1200;
                 sprite.scale.set(size, size, 1);
                 sprite.position.set(
-                    THREE.MathUtils.randFloatSpread(2000),
-                    THREE.MathUtils.randFloatSpread(1500),
-                    -1500 - i * 150
+                    THREE.MathUtils.randFloatSpread(2500),
+                    THREE.MathUtils.randFloatSpread(1800),
+                    -1200 - i * 200
                 );
-                sprite.userData = { speed: 0.0001 + Math.random() * 0.0003, offset: Math.random() * Math.PI * 2, phase: Math.random() * 10, size: size };
+                sprite.userData = { 
+                    speedX: (Math.random() - 0.5) * 0.001,
+                    speedY: (Math.random() - 0.5) * 0.001,
+                    phase: Math.random() * Math.PI * 2,
+                    originalSize: size
+                };
                 scene.add(sprite);
                 backgroundObjects.push(sprite);
             }
@@ -1509,7 +1602,7 @@
 
             const dynamicSpeed = settings.speed * (1 + smoothedBass * settings.sensitivity * 2);
 
-            animateBackground(elapsedTime, smoothedBass);
+            animateBackground(elapsedTime, smoothedBass, smoothedMid, smoothedHigh);
 
             if (orbitControls && orbitControls.enabled) orbitControls.update();
 
@@ -1527,7 +1620,31 @@
                 case 'particlesJs': animateParticlesJs(dynamicSpeed, smoothedBass); break;
             }
 
-            // Renderizado por EffectComposer (Bloom) en lugar de renderer standard
+            // Aplicar Efectos de Post-procesado Pro
+            if (fxPass) {
+                fxPass.uniforms.time.value = elapsedTime;
+                
+                // 1. Chromatic Aberration (Ligada a agudos)
+                const targetCA = smoothedHigh * 0.015 * settings.sensitivity;
+                fxPass.uniforms.amount.value = lerp(fxPass.uniforms.amount.value, targetCA, 0.1);
+                fxPass.uniforms.angle.value = elapsedTime * 0.5;
+
+                // 2. Glitch Rítmico (Solo en picos de energía)
+                if (rawBass > 0.8 || rawMid > 0.8) {
+                    glitchTimer = 0.2; // Duración del glitch
+                }
+                glitchTimer = Math.max(0, glitchTimer - 0.016);
+                fxPass.uniforms.glitchIntensity.value = glitchTimer > 0 ? 0.3 * (glitchTimer / 0.2) : 0;
+
+                // 3. Impact Flash (Sincronizado con el Beat)
+                if (rawBass > 0.9) {
+                    flashTimer = 0.15;
+                }
+                flashTimer = Math.max(0, flashTimer - 0.01);
+                fxPass.uniforms.flashAmount.value = flashTimer * 0.2;
+            }
+
+            // Renderizado por EffectComposer (Bloom + FX)
             if (composer) {
                 composer.render();
             } else {
@@ -1535,18 +1652,35 @@
             }
         }
 
-        function animateBackground(time, audioLevel) {
-            backgroundObjects.forEach((sprite, i) => {
-                const u = sprite.userData;
-                const movementScale = 1 + audioLevel * settings.sensitivity;
+        function animateBackground(time, bass, mid, high) {
+            // 1. Animación de StarField (Polvo Estelar)
+            if (starField) {
+                const pos = starField.geometry.attributes.position.array;
+                const starSpeed = 0.2 + bass * 8 * settings.sensitivity;
+                
+                for (let i = 0; i < pos.length; i += 3) {
+                    pos[i + 2] += starSpeed; // Avanzar hacia la cámara
+                    if (pos[i+2] > 1000) pos[i+2] = -1000;
+                }
+                starField.geometry.attributes.position.needsUpdate = true;
+                starField.rotation.z += 0.0001;
+                starField.material.opacity = 0.2 + (bass + high) * 0.3;
+            }
 
-                sprite.position.x += Math.sin(time * u.speed * 8 + u.offset) * 1.5 * movementScale;
-                sprite.position.y += Math.cos(time * u.speed * 6 + u.offset) * 1.5 * movementScale;
+            // 2. Animación de Nebulosas (Sprites)
+            backgroundObjects.forEach((obj, i) => {
+                if (obj === starField) return; // Saltarse el starfield
 
-                const s = u.size * (1 + Math.sin(time * 0.2 + u.phase) * 0.1);
-                sprite.scale.set(s, s, 1);
+                const u = obj.userData;
+                const energy = (bass + mid) * 0.5 * settings.sensitivity;
 
-                sprite.material.opacity = 0.1 + (audioLevel * 0.15 * settings.sensitivity);
+                obj.position.x += u.speedX * (1 + energy * 5);
+                obj.position.y += u.speedY * (1 + energy * 5);
+
+                const pulse = 1 + Math.sin(time * 0.5 + u.phase) * 0.1 + energy * 0.2;
+                obj.scale.set(u.originalSize * pulse, u.originalSize * pulse, 1);
+
+                obj.material.opacity = 0.08 + energy * 0.15;
             });
         }
 
