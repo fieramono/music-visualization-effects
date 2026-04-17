@@ -12,6 +12,8 @@ We've recently upgraded the engine to provide a more visceral and physical exper
 - **💥 Camera Physics**: The camera now feels the music with **Beat Shake** (vibration on heavy hits) and **Auto-Zoom Pulse** for deep immersion.
 - **💠 Kaleidoscope Mode**: Transform any pattern into a hypnotic radial symmetry experience with a single click.
 - **💡 Impact Lighting**: Dynamic `PointLights` that orbit and blink, creating real 3D depth and shadows.
+- **📱 PWA & Native Experience**: Installable as an app on iOS and Android with a standalone full-screen interface (no browser bars).
+- **🔋 Stay Awake Logic**: Uses the Screen Wake Lock API to prevent the device from sleeping during the visualization.
 
 ---
 
@@ -50,6 +52,7 @@ We've recently upgraded the engine to provide a more visceral and physical exper
 - **Audio Intelligence**: Web Audio API (Mic-linking with beat detection)
 - **Styling**: Tailwind CSS (Premium Glassmorphism)
 - **Tutorial System**: Custom Step-by-Step Spotlight Onboarding
+- **PWA Architecture**: Manifest.json + Service Worker (Offline-ready)
 
 ---
 

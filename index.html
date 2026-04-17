@@ -5,6 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Music Visualizer Effects by Mono</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#020204">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js y dependencias para Controles y Post-procesado (Glow) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -682,6 +689,13 @@
             <input type="range" id="sensitivity" min="0.1" max="4" step="0.1" value="1.5" disabled>
         </div>
 
+        <div class="control-group mt-2 pt-2 border-t border-gray-800">
+            <div class="flex items-center gap-2 text-[10px] text-gray-500">
+                <div id="wakeLockStatus" class="w-1.5 h-1.5 rounded-full bg-gray-600"></div>
+                <span id="wakeLockText">Screen timeout: Default</span>
+            </div>
+        </div>
+
         <div class="control-group mt-2 pt-4 border-t border-gray-800">
             <h4 class="text-[10px] uppercase tracking-wider text-gray-500 mb-4">Physics & Post-FX</h4>
             <div class="space-y-4">
@@ -818,6 +832,8 @@
         let smoothedBass = 0;
         let smoothedMid = 0;
         let smoothedHigh = 0;
+
+        let wakeLock = null;
 
         // Paletas Premium por defecto
         const defaultPresets = [
@@ -2185,6 +2201,35 @@
             }
         }
 
+        // --- Screen Wake Lock (Prevent Sleep) ---
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    const statusDot = document.getElementById('wakeLockStatus');
+                    const statusText = document.getElementById('wakeLockText');
+                    
+                    statusDot.style.backgroundColor = '#10b981';
+                    statusText.textContent = "Screen timeout: Prevented (Stay Awake)";
+                    
+                    wakeLock.addEventListener('release', () => {
+                        console.log('Wake Lock was released');
+                        statusDot.style.backgroundColor = '#4b5563';
+                        statusText.textContent = "Screen timeout: Default";
+                    });
+                } catch (err) {
+                    console.error(`${err.name}, ${err.message}`);
+                }
+            }
+        }
+
+        // Re-solicitar si se regresa a la pestaña
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+
         // --- Listeners y UI ---
         function setupUIListeners() {
             const ui = {
@@ -2242,7 +2287,10 @@
             ui.color1.addEventListener('input', handleColorUpdate);
             ui.color2.addEventListener('input', handleColorUpdate);
 
-            ui.audioButton.addEventListener('click', setupAudio);
+            ui.audioButton.addEventListener('click', () => {
+                setupAudio();
+                requestWakeLock();
+            });
             ui.sensitivity.addEventListener('input', e => { settings.sensitivity = parseFloat(e.target.value); });
 
             // Bindings Fase 2
@@ -2480,7 +2528,17 @@
 
         // Initialize
         init();
-        setTimeout(startTutorial, 1000); // Small delay for effect
+        animate(); // Asegurar que animate comience también
+        setTimeout(startTutorial, 1000); 
+
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('Service Worker registration failed', err));
+            });
+        }
     </script>
 </body>
 
